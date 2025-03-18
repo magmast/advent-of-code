@@ -8,25 +8,12 @@ use tokio::{
 };
 use tokio_stream::wrappers::LinesStream;
 
-struct Vec2 {
-    x: u32,
-    y: u32,
-}
-
-impl Vec2 {
-    fn area(&self) -> u32 {
-        self.x * self.y
-    }
-
-    fn perimeter(&self) -> u32 {
-        2 * (self.x + self.y)
-    }
-}
+use super::Vec2;
 
 struct Vec3 {
-    x: u32,
-    y: u32,
-    z: u32,
+    x: i32,
+    y: i32,
+    z: i32,
 }
 
 impl FromStr for Vec3 {
@@ -43,14 +30,14 @@ impl FromStr for Vec3 {
 }
 
 impl Vec3 {
-    fn surface_area(&self) -> u32 {
+    fn surface_area(&self) -> i32 {
         let xy = self.x * self.y;
         let yz = self.y * self.z;
         let xz = self.x * self.z;
         2 * (xy + yz + xz)
     }
 
-    fn volume(&self) -> u32 {
+    fn volume(&self) -> i32 {
         self.x * self.y * self.z
     }
 
@@ -109,7 +96,7 @@ impl Args {
         }
     }
 
-    async fn answer(&self, f: impl Fn(u32, Vec3) -> u32) -> anyhow::Result<()> {
+    async fn answer(&self, f: impl Fn(i32, Vec3) -> i32) -> anyhow::Result<()> {
         let input = File::open("inputs/y15_d02.txt").await?;
         let input = BufReader::new(input);
         let answer = LinesStream::new(input.lines())
