@@ -167,13 +167,22 @@ struct Connection<'a> {
     to: Identifier<'a>,
 }
 
+impl<'a> Connection<'a> {
+    fn literal(to: Identifier<'a>, value: u32) -> Self {
+        Self {
+            from: ConnectionSource::Literal(value),
+            to,
+        }
+    }
+}
+
 #[derive(Default)]
 struct State<'a> {
     signals: HashMap<Identifier<'a>, ConnectionSource<'a>>,
 }
 
 impl<'a> State<'a> {
-    pub fn add_connection(&mut self, conn: Connection<'a>) {
+    pub fn set_connection(&mut self, conn: Connection<'a>) {
         self.signals.insert(conn.to, conn.from);
     }
 }
@@ -239,8 +248,7 @@ impl<'a, 'b> Evaluator<'a, 'b> {
     }
 }
 
-pub async fn p1() -> anyhow::Result<()> {
-    let input = tokio::fs::read_to_string("inputs/y15_d07.txt").await?;
+async fn state_from_str(input: &str) -> anyhow::Result<State> {
     let state = input
         .lines()
         .map(|line| {
@@ -250,16 +258,26 @@ pub async fn p1() -> anyhow::Result<()> {
                 .map_err(anyhow::Error::from)
         })
         .try_fold(State::default(), |mut state, conn| {
-            state.add_connection(conn?);
+            state.set_connection(conn?);
             Ok::<_, anyhow::Error>(state)
         })?;
-    let start = Instant::now();
+    Ok(state)
+}
+
+pub async fn p1() -> anyhow::Result<()> {
+    let input = tokio::fs::read_to_string("inputs/y15_d07.txt").await?;
+    let state = state_from_str(&input).await?;
     let value = Evaluator::new(&state).eval("a").unwrap();
-    println!("Time taken: {:?}", start.elapsed());
     println!("Answer: {}", value);
     Ok(())
 }
 
 pub async fn p2() -> anyhow::Result<()> {
-    todo!()
+    let input = tokio::fs::read_to_string("inputs/y15_d07.txt").await?;
+    let mut state = state_from_str(&input).await?;
+    let a_value = Evaluator::new(&state).eval("a").unwrap();
+    state.set_connection(Connection::literal("b", a_value));
+    let a_value = Evaluator::new(&state).eval("a").unwrap();
+    println!("Answer: {}", a_value);
+    Ok(())
 }
