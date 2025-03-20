@@ -7,5 +7,15 @@ edition = "2024"
 anyhow = "1.0.97"
 clap = { version = "4.5.32", features = ["derive"] }
 futures = "0.3.31"
-tokio = { version = "1.44.1", features = ["fs", "io-util", "macros", "rt-multi-thread"] }
+itertools = "0.14.0"
+md5 = "0.7.0"
+once_cell = "1.21.1"
+rayon = "1.10.0"
+tokio = { version = "1.44.1", features = [
+    "fs",
+    "io-util",
+    "macros",
+    "rt-multi-thread",
+] }
 tokio-stream = { version = "0.1.17", features = ["io-util"] }
+wgpu = "24.0.3"

@@ -38,22 +38,35 @@ impl AddAssign<Direction> for Vec2 {
 
 struct State {
     visited: HashSet<Vec2>,
-    current: Vec2,
+    current_index: usize,
+    current: Vec<Vec2>,
 }
 
 impl State {
-    fn new() -> Self {
+    fn new(santas: usize) -> Self {
+        assert_ne!(santas, 0);
+
         let mut visited = HashSet::new();
         visited.insert(Vec2::ORIGIN);
+
+        let mut current = Vec::with_capacity(santas);
+        for _ in 0..santas {
+            current.push(Vec2::ORIGIN);
+        }
+
         Self {
             visited,
-            current: Vec2::ORIGIN,
+            current_index: 0,
+            current,
         }
     }
 
     fn translate(&mut self, dir: Direction) {
-        self.current += dir;
-        self.visited.insert(self.current);
+        let current = &mut self.current[self.current_index];
+        *current += dir;
+        self.visited.insert(*current);
+
+        self.current_index = self.current_index.wrapping_add(1) % self.current.len();
     }
 }
 
@@ -71,20 +84,20 @@ pub struct Args {
 
 impl Args {
     pub async fn run(&self) -> anyhow::Result<()> {
-        match &self.command {
-            Subcommand::P1 => {
-                let input = tokio::fs::read_to_string("inputs/y15_d03.txt").await?;
-                let state = input.chars().map(|ch| Direction::try_from(ch)).try_fold(
-                    State::new(),
-                    |mut state, dir| {
-                        state.translate(dir?);
-                        Ok::<_, anyhow::Error>(state)
-                    },
-                )?;
-                println!("Answer: {}", state.visited.len());
-                Ok(())
-            }
-            Subcommand::P2 => todo!(),
-        }
+        let initial_state = match &self.command {
+            Subcommand::P1 => State::new(1),
+            Subcommand::P2 => State::new(2),
+        };
+
+        let input = tokio::fs::read_to_string("inputs/y15_d03.txt").await?;
+        let state = input.chars().map(|ch| Direction::try_from(ch)).try_fold(
+            initial_state,
+            |mut state, dir| {
+                state.translate(dir?);
+                Ok::<_, anyhow::Error>(state)
+            },
+        )?;
+        println!("Answer: {}", state.visited.len());
+        Ok(())
     }
 }

@@ -60,7 +60,7 @@ mod tests {
     use super::traverse_apartment;
 
     #[test]
-    fn test_get_final_floor() {
+    fn test_traverse_apartment() {
         assert_eq!(traverse_apartment("(())").last(), Some(0));
         assert_eq!(traverse_apartment("(((").last(), Some(3));
         assert_eq!(traverse_apartment("(()(()(").last(), Some(3));
