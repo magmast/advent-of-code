@@ -1,3 +1,5 @@
+#![feature(step_trait)]
+
 pub mod y15;
 
 use clap::Parser;

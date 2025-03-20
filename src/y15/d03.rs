@@ -25,7 +25,7 @@ impl TryFrom<char> for Direction {
     }
 }
 
-impl AddAssign<Direction> for Vec2 {
+impl AddAssign<Direction> for Vec2<i32> {
     fn add_assign(&mut self, rhs: Direction) {
         match rhs {
             Direction::North => self.y += 1,
@@ -37,9 +37,9 @@ impl AddAssign<Direction> for Vec2 {
 }
 
 struct State {
-    visited: HashSet<Vec2>,
+    visited: HashSet<Vec2<i32>>,
     current_index: usize,
-    current: Vec<Vec2>,
+    current: Vec<Vec2<i32>>,
 }
 
 impl State {
@@ -47,11 +47,11 @@ impl State {
         assert_ne!(santas, 0);
 
         let mut visited = HashSet::new();
-        visited.insert(Vec2::ORIGIN);
+        visited.insert(Vec2::default());
 
         let mut current = Vec::with_capacity(santas);
         for _ in 0..santas {
-            current.push(Vec2::ORIGIN);
+            current.push(Vec2::default());
         }
 
         Self {

@@ -41,7 +41,7 @@ impl Vec3 {
         self.x * self.y * self.z
     }
 
-    fn sides(&self) -> [Vec2; 3] {
+    fn sides(&self) -> [Vec2<i32>; 3] {
         [
             Vec2 {
                 x: self.x,

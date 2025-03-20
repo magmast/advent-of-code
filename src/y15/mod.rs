@@ -1,24 +1,94 @@
-pub mod d01;
-pub mod d02;
-pub mod d03;
-pub mod d04;
-pub mod d05;
+use std::{
+    iter::Step,
+    ops::{Add, Mul},
+};
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-pub struct Vec2 {
-    x: i32,
-    y: i32,
+mod d01;
+mod d02;
+mod d03;
+mod d04;
+mod d05;
+mod d06;
+
+#[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Clone, Copy)]
+pub struct Vec2<T> {
+    x: T,
+    y: T,
 }
 
-impl Vec2 {
-    const ORIGIN: Self = Self { x: 0, y: 0 };
+impl<T> Vec2<T> {
+    pub fn new(x: T, y: T) -> Self {
+        Self { x, y }
+    }
+}
 
-    pub fn area(&self) -> i32 {
+impl<T> Vec2<T>
+where
+    T: Mul<T> + Copy,
+{
+    pub fn area(&self) -> T::Output {
         self.x * self.y
     }
+}
 
-    pub fn perimeter(&self) -> i32 {
-        2 * (self.x + self.y)
+impl<T, O> Vec2<T>
+where
+    T: Add<T, Output = O> + Copy,
+    O: Mul<i32>,
+{
+    pub fn perimeter(&self) -> O::Output {
+        (self.x + self.y) * 2
+    }
+}
+
+impl<T> Vec2<T>
+where
+    T: Step + Copy,
+{
+    pub fn points_to_inclusive(self, rhs: Vec2<T>) -> PointRangeInclusive<T> {
+        PointRangeInclusive {
+            start: self,
+            end: rhs,
+            curr: None,
+        }
+    }
+}
+
+/// An inclusive range of points in a 2D grid.
+#[derive(Debug, Clone, Copy)]
+pub struct PointRangeInclusive<T>
+where
+    T: Step + Copy,
+{
+    start: Vec2<T>,
+    end: Vec2<T>,
+    curr: Option<Vec2<T>>,
+}
+
+impl<T> Iterator for PointRangeInclusive<T>
+where
+    T: Step + Copy,
+{
+    type Item = Vec2<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(curr) = &mut self.curr {
+            if curr.x < self.end.x {
+                curr.x = T::forward_checked(curr.x, 1)?;
+                return Some(*curr);
+            }
+
+            curr.x = self.start.x;
+            if curr.y < self.end.y {
+                curr.y = T::forward_checked(curr.y, 1)?;
+                return Some(*curr);
+            }
+
+            None
+        } else {
+            self.curr = Some(self.start);
+            self.curr
+        }
     }
 }
 
@@ -41,6 +111,7 @@ enum Subcommand {
     D03(DayArgs),
     D04(DayArgs),
     D05(DayArgs),
+    D06(DayArgs),
 }
 
 #[derive(clap::Args)]
@@ -72,6 +143,54 @@ impl Args {
                 DaySubcommand::P1 => d05::p1().await,
                 DaySubcommand::P2 => d05::p2().await,
             },
+            Subcommand::D06(args) => match args.command {
+                DaySubcommand::P1 => d06::p1().await,
+                DaySubcommand::P2 => d06::p2().await,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    mod point_range_inclusive {
+        use crate::y15::Vec2;
+
+        #[test]
+        fn test_single_point() {
+            let mut range = Vec2::new(0, 0).points_to_inclusive(Vec2::new(0, 0));
+            assert_eq!(range.next(), Some(Vec2::new(0, 0)));
+            assert_eq!(range.next(), None);
+        }
+
+        #[test]
+        fn test_horizontal_line_points() {
+            let mut range = Vec2::new(0, 0).points_to_inclusive(Vec2::new(3, 0));
+            assert_eq!(range.next(), Some(Vec2::new(0, 0)));
+            assert_eq!(range.next(), Some(Vec2::new(1, 0)));
+            assert_eq!(range.next(), Some(Vec2::new(2, 0)));
+            assert_eq!(range.next(), Some(Vec2::new(3, 0)));
+            assert_eq!(range.next(), None);
+        }
+
+        #[test]
+        fn test_vertical_line_points() {
+            let mut range = Vec2::new(0, 0).points_to_inclusive(Vec2::new(0, 3));
+            assert_eq!(range.next(), Some(Vec2::new(0, 0)));
+            assert_eq!(range.next(), Some(Vec2::new(0, 1)));
+            assert_eq!(range.next(), Some(Vec2::new(0, 2)));
+            assert_eq!(range.next(), Some(Vec2::new(0, 3)));
+            assert_eq!(range.next(), None);
+        }
+
+        #[test]
+        fn test_rect_points() {
+            let mut range = Vec2::new(0, 0).points_to_inclusive(Vec2::new(1, 1));
+            assert_eq!(range.next(), Some(Vec2::new(0, 0)));
+            assert_eq!(range.next(), Some(Vec2::new(1, 0)));
+            assert_eq!(range.next(), Some(Vec2::new(0, 1)));
+            assert_eq!(range.next(), Some(Vec2::new(1, 1)));
+            assert_eq!(range.next(), None);
         }
     }
 }
