@@ -70,34 +70,24 @@ impl State {
     }
 }
 
-#[derive(clap::Subcommand)]
-enum Subcommand {
-    P1,
-    P2,
-}
-
-#[derive(clap::Args)]
-pub struct Args {
-    #[command(subcommand)]
-    command: Subcommand,
-}
-
-impl Args {
-    pub async fn run(&self) -> anyhow::Result<()> {
-        let initial_state = match &self.command {
-            Subcommand::P1 => State::new(1),
-            Subcommand::P2 => State::new(2),
-        };
-
-        let input = tokio::fs::read_to_string("inputs/y15_d03.txt").await?;
-        let state = input.chars().map(|ch| Direction::try_from(ch)).try_fold(
-            initial_state,
-            |mut state, dir| {
+async fn answer(state: State) -> anyhow::Result<()> {
+    let input = tokio::fs::read_to_string("inputs/y15_d03.txt").await?;
+    let state =
+        input
+            .chars()
+            .map(|ch| Direction::try_from(ch))
+            .try_fold(state, |mut state, dir| {
                 state.translate(dir?);
                 Ok::<_, anyhow::Error>(state)
-            },
-        )?;
-        println!("Answer: {}", state.visited.len());
-        Ok(())
-    }
+            })?;
+    println!("Answer: {}", state.visited.len());
+    Ok(())
+}
+
+pub async fn p1() -> anyhow::Result<()> {
+    answer(State::new(1)).await
+}
+
+pub async fn p2() -> anyhow::Result<()> {
+    answer(State::new(2)).await
 }

@@ -18,41 +18,24 @@ pub fn traverse_apartment(directions: &str) -> impl Iterator<Item = i32> {
     })
 }
 
-#[derive(clap::Subcommand)]
-enum Subcommand {
-    P1,
-    P2,
+pub async fn p1() -> anyhow::Result<()> {
+    let input = tokio::fs::read_to_string("inputs/y15_d01.txt").await?;
+    let answer = traverse_apartment(&input)
+        .last()
+        .context("Directions are empty")?;
+    println!("Answer: {}", answer);
+    Ok(())
 }
 
-#[derive(clap::Args)]
-pub struct Args {
-    #[command(subcommand)]
-    command: Subcommand,
-}
-
-impl Args {
-    pub async fn run(&self) -> anyhow::Result<()> {
-        let input = tokio::fs::read_to_string("inputs/y15_d01.txt").await?;
-
-        match self.command {
-            Subcommand::P1 => {
-                let answer = traverse_apartment(&input)
-                    .last()
-                    .context("Directions are empty")?;
-                println!("Answer: {}", answer);
-            }
-            Subcommand::P2 => {
-                let answer = traverse_apartment(&input)
-                    .enumerate()
-                    .find(|(_, floor)| *floor == -1)
-                    .map(|(i, _)| i)
-                    .context("Basement never entered");
-                println!("Answer: {}", answer.unwrap() + 1);
-            }
-        };
-
-        Ok(())
-    }
+pub async fn p2() -> anyhow::Result<()> {
+    let input = tokio::fs::read_to_string("inputs/y15_d01.txt").await?;
+    let answer = traverse_apartment(&input)
+        .enumerate()
+        .find(|(_, floor)| *floor == -1)
+        .map(|(i, _)| i)
+        .context("Basement never entered");
+    println!("Answer: {}", answer.unwrap() + 1);
+    Ok(())
 }
 
 #[cfg(test)]

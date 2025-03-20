@@ -59,56 +59,38 @@ impl Vec3 {
     }
 }
 
-#[derive(clap::Subcommand)]
-enum Subcommand {
-    P1,
-    P2,
+async fn answer(f: impl Fn(i32, Vec3) -> i32) -> anyhow::Result<()> {
+    let input = File::open("inputs/y15_d02.txt").await?;
+    let input = BufReader::new(input);
+    let answer = LinesStream::new(input.lines())
+        .map_err(anyhow::Error::from)
+        .try_fold(0, {
+            async |acc, line| {
+                let dims = Vec3::from_str(&line)?;
+                Ok(f(acc, dims))
+            }
+        })
+        .await?;
+    println!("Answer: {}", answer);
+    Ok(())
 }
 
-#[derive(clap::Args)]
-pub struct Args {
-    #[command(subcommand)]
-    command: Subcommand,
+pub async fn p1() -> anyhow::Result<()> {
+    answer(|acc, dims| {
+        acc + dims.surface_area() + dims.sides().map(|side| side.area()).iter().min().unwrap()
+    })
+    .await
 }
 
-impl Args {
-    pub async fn run(&self) -> anyhow::Result<()> {
-        match &self.command {
-            Subcommand::P1 => {
-                self.answer(|acc, dims| {
-                    acc + dims.surface_area()
-                        + dims.sides().map(|side| side.area()).iter().min().unwrap()
-                })
-                .await
-            }
-            Subcommand::P2 => {
-                self.answer(|acc, dims| {
-                    acc + dims.volume()
-                        + dims
-                            .sides()
-                            .map(|side| side.perimeter())
-                            .iter()
-                            .min()
-                            .unwrap()
-                })
-                .await
-            }
-        }
-    }
-
-    async fn answer(&self, f: impl Fn(i32, Vec3) -> i32) -> anyhow::Result<()> {
-        let input = File::open("inputs/y15_d02.txt").await?;
-        let input = BufReader::new(input);
-        let answer = LinesStream::new(input.lines())
-            .map_err(anyhow::Error::from)
-            .try_fold(0, {
-                async |acc, line| {
-                    let dims = Vec3::from_str(&line)?;
-                    Ok(f(acc, dims))
-                }
-            })
-            .await?;
-        println!("Answer: {}", answer);
-        Ok(())
-    }
+pub async fn p2() -> anyhow::Result<()> {
+    answer(|acc, dims| {
+        acc + dims.volume()
+            + dims
+                .sides()
+                .map(|side| side.perimeter())
+                .iter()
+                .min()
+                .unwrap()
+    })
+    .await
 }

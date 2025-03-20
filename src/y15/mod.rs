@@ -23,12 +23,24 @@ impl Vec2 {
 }
 
 #[derive(clap::Subcommand)]
+enum DaySubcommand {
+    P1,
+    P2,
+}
+
+#[derive(clap::Args)]
+struct DayArgs {
+    #[command(subcommand)]
+    command: DaySubcommand,
+}
+
+#[derive(clap::Subcommand)]
 enum Subcommand {
-    D01(d01::Args),
-    D02(d02::Args),
-    D03(d03::Args),
-    D04(d04::Args),
-    D05(d05::Args),
+    D01(DayArgs),
+    D02(DayArgs),
+    D03(DayArgs),
+    D04(DayArgs),
+    D05(DayArgs),
 }
 
 #[derive(clap::Args)]
@@ -40,11 +52,26 @@ pub struct Args {
 impl Args {
     pub async fn run(&self) -> anyhow::Result<()> {
         match &self.command {
-            Subcommand::D01(args) => args.run().await,
-            Subcommand::D02(args) => args.run().await,
-            Subcommand::D03(args) => args.run().await,
-            Subcommand::D04(args) => args.run().await,
-            Subcommand::D05(args) => args.run().await,
+            Subcommand::D01(args) => match args.command {
+                DaySubcommand::P1 => d01::p1().await,
+                DaySubcommand::P2 => d01::p2().await,
+            },
+            Subcommand::D02(args) => match args.command {
+                DaySubcommand::P1 => d02::p1().await,
+                DaySubcommand::P2 => d02::p2().await,
+            },
+            Subcommand::D03(args) => match args.command {
+                DaySubcommand::P1 => d03::p1().await,
+                DaySubcommand::P2 => d03::p2().await,
+            },
+            Subcommand::D04(args) => match args.command {
+                DaySubcommand::P1 => d04::p1(),
+                DaySubcommand::P2 => d04::p2(),
+            },
+            Subcommand::D05(args) => match args.command {
+                DaySubcommand::P1 => d05::p1().await,
+                DaySubcommand::P2 => d05::p2().await,
+            },
         }
     }
 }

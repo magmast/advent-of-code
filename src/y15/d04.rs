@@ -3,36 +3,27 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterato
 
 const INPUT: &str = "iwrupvqb";
 
-#[derive(clap::Subcommand)]
-enum Subcommand {
-    P1,
-    P2,
+fn find_suffix_for_md5_prefix(prefix: &str) -> Option<u32> {
+    (0..u32::MAX)
+        .into_par_iter()
+        .by_exponential_blocks()
+        .find_first(|i| {
+            format!("{:x}", md5::compute(format!("{}{}", INPUT, i))).starts_with(prefix)
+        })
 }
 
-#[derive(clap::Args)]
-pub struct Args {
-    #[command(subcommand)]
-    subcommand: Subcommand,
+fn answer(prefix: &str) -> anyhow::Result<()> {
+    let suffix = find_suffix_for_md5_prefix(prefix).context("Suffix not found")?;
+
+    println!("Answer: {}", suffix);
+
+    Ok(())
 }
 
-impl Args {
-    pub async fn run(&self) -> anyhow::Result<()> {
-        let suffix = match &self.subcommand {
-            Subcommand::P1 => Self::find_suffix_for_md5_prefix("00000"),
-            Subcommand::P2 => Self::find_suffix_for_md5_prefix("000000"),
-        };
+pub fn p1() -> anyhow::Result<()> {
+    answer("00000")
+}
 
-        println!("Answer: {}", suffix.context("Suffix not found")?);
-
-        Ok(())
-    }
-
-    pub fn find_suffix_for_md5_prefix(prefix: &str) -> Option<u32> {
-        (0..u32::MAX)
-            .into_par_iter()
-            .by_exponential_blocks()
-            .find_first(|i| {
-                format!("{:x}", md5::compute(format!("{}{}", INPUT, i))).starts_with(prefix)
-            })
-    }
+pub fn p2() -> anyhow::Result<()> {
+    answer("000000")
 }

@@ -9,36 +9,15 @@ const VOWELS: &str = "aeiou";
 
 const DISALLOWED_SEQUENCES: &[&str] = &["ab", "cd", "pq", "xy"];
 
-#[derive(clap::Subcommand)]
-enum Subcommand {
-    P1,
-    P2,
-}
-
-#[derive(clap::Args)]
-pub struct Args {
-    #[command(subcommand)]
-    subcommand: Subcommand,
-}
-
-impl Args {
-    pub async fn run(&self) -> anyhow::Result<()> {
-        match &self.subcommand {
-            Subcommand::P1 => Self::answer(is_p1_nice).await,
-            Subcommand::P2 => Self::answer(is_p2_nice).await,
-        }
-    }
-
-    async fn answer(mut check_nice: impl FnMut(&str) -> bool) -> anyhow::Result<()> {
-        let input = File::open("inputs/y15_d05.txt").await?;
-        let input = BufReader::new(input);
-        let nice_count = LinesStream::new(input.lines())
-            .try_filter(|line| future::ready(check_nice(line)))
-            .count()
-            .await;
-        println!("Answer: {}", nice_count);
-        Ok(())
-    }
+async fn answer(is_nice: impl Fn(&str) -> bool) -> anyhow::Result<()> {
+    let input = File::open("inputs/y15_d05.txt").await?;
+    let input = BufReader::new(input);
+    let nice_count = LinesStream::new(input.lines())
+        .try_filter(|line| future::ready(is_nice(line)))
+        .count()
+        .await;
+    println!("Answer: {}", nice_count);
+    Ok(())
 }
 
 fn is_p1_nice(line: &str) -> bool {
@@ -59,6 +38,10 @@ fn is_p1_nice(line: &str) -> bool {
     }
 
     false
+}
+
+pub async fn p1() -> anyhow::Result<()> {
+    answer(is_p1_nice).await
 }
 
 fn is_p2_nice(line: &str) -> bool {
@@ -84,6 +67,10 @@ fn is_p2_nice(line: &str) -> bool {
         .iter()
         .enumerate()
         .any(|(i, a)| pairs.iter().skip(i + 2).any(|b| a == b))
+}
+
+pub async fn p2() -> anyhow::Result<()> {
+    answer(is_p2_nice).await
 }
 
 #[cfg(test)]
