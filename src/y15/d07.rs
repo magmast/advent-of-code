@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, time::Instant};
+use std::{collections::HashMap, fmt::Display};
 
 mod parser {
     use nom::{
