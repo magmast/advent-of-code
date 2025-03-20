@@ -20,10 +20,10 @@ fn answer(prefix: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn p1() -> anyhow::Result<()> {
+pub async fn p1() -> anyhow::Result<()> {
     answer("00000")
 }
 
-pub fn p2() -> anyhow::Result<()> {
+pub async fn p2() -> anyhow::Result<()> {
     answer("000000")
 }

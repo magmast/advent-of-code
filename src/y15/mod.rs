@@ -3,13 +3,6 @@ use std::{
     ops::{Add, Mul},
 };
 
-mod d01;
-mod d02;
-mod d03;
-mod d04;
-mod d05;
-mod d06;
-
 #[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub struct Vec2<T> {
     x: T,
@@ -92,64 +85,54 @@ where
     }
 }
 
-#[derive(clap::Subcommand)]
-enum DaySubcommand {
-    P1,
-    P2,
-}
+macro_rules! define_year {
+    ($($day_num:ident),+) => {
+        $( mod $day_num; )*
 
-#[derive(clap::Args)]
-struct DayArgs {
-    #[command(subcommand)]
-    command: DaySubcommand,
-}
-
-#[derive(clap::Subcommand)]
-enum Subcommand {
-    D01(DayArgs),
-    D02(DayArgs),
-    D03(DayArgs),
-    D04(DayArgs),
-    D05(DayArgs),
-    D06(DayArgs),
-}
-
-#[derive(clap::Args)]
-pub struct Args {
-    #[command(subcommand)]
-    command: Subcommand,
-}
-
-impl Args {
-    pub async fn run(&self) -> anyhow::Result<()> {
-        match &self.command {
-            Subcommand::D01(args) => match args.command {
-                DaySubcommand::P1 => d01::p1().await,
-                DaySubcommand::P2 => d01::p2().await,
-            },
-            Subcommand::D02(args) => match args.command {
-                DaySubcommand::P1 => d02::p1().await,
-                DaySubcommand::P2 => d02::p2().await,
-            },
-            Subcommand::D03(args) => match args.command {
-                DaySubcommand::P1 => d03::p1().await,
-                DaySubcommand::P2 => d03::p2().await,
-            },
-            Subcommand::D04(args) => match args.command {
-                DaySubcommand::P1 => d04::p1(),
-                DaySubcommand::P2 => d04::p2(),
-            },
-            Subcommand::D05(args) => match args.command {
-                DaySubcommand::P1 => d05::p1().await,
-                DaySubcommand::P2 => d05::p2().await,
-            },
-            Subcommand::D06(args) => match args.command {
-                DaySubcommand::P1 => d06::p1().await,
-                DaySubcommand::P2 => d06::p2().await,
-            },
+        #[derive(clap::Subcommand)]
+        enum DaySubcommand {
+            P1,
+            P2,
         }
-    }
+
+        #[derive(clap::Args)]
+        struct DayArgs {
+            #[command(subcommand)]
+            command: DaySubcommand,
+        }
+
+        #[derive(clap::Subcommand)]
+        #[allow(non_camel_case_types)]
+        enum Subcommand {
+            $(
+                $day_num(DayArgs),
+            )*
+        }
+
+        #[derive(clap::Args)]
+        pub struct Args {
+            #[command(subcommand)]
+            command: Subcommand,
+        }
+
+        impl Args {
+            pub async fn run(&self) -> anyhow::Result<()> {
+                match &self.command {
+                    $(
+                        Subcommand::$day_num(args) => {
+                            match args.command {
+                                DaySubcommand::P1 => $day_num::p1().await,
+                                DaySubcommand::P2 => $day_num::p2().await,
+                            }
+                        }
+                    )*
+                }
+            }
+        }
+    };
 }
+
+define_year!(d01, d02, d03, d04, d05, d06, d07);
 
 #[cfg(test)]
 mod tests {
