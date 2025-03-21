@@ -3,6 +3,8 @@ use std::{
     ops::{Add, Mul},
 };
 
+use nom::{AsChar, Input, Parser, character::complete::space0, sequence::delimited};
+
 #[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub struct Vec2<T> {
     x: T,
@@ -24,12 +26,12 @@ where
     }
 }
 
-impl<T, O> Vec2<T>
+impl<T> Vec2<T>
 where
-    T: Add<T, Output = O> + Copy,
-    O: Mul<i32>,
+    T: Add<T> + Copy,
+    <T as Add<T>>::Output: Mul<i32>,
 {
-    pub fn perimeter(&self) -> O::Output {
+    pub fn perimeter(&self) -> <<T as Add<T>>::Output as Mul<i32>>::Output {
         (self.x + self.y) * 2
     }
 }
@@ -85,6 +87,15 @@ where
     }
 }
 
+pub fn ws<I, P>(parser: P) -> impl Parser<I, Output = P::Output, Error = P::Error>
+where
+    I: Input,
+    I::Item: AsChar,
+    P: Parser<I>,
+{
+    delimited(space0, parser, space0)
+}
+
 macro_rules! define_year {
     ($($day_num:ident),+) => {
         $( mod $day_num; )*
@@ -132,7 +143,7 @@ macro_rules! define_year {
     };
 }
 
-define_year!(d01, d02, d03, d04, d05, d06, d07, d08);
+define_year!(d01, d02, d03, d04, d05, d06, d07, d08, d09);
 
 #[cfg(test)]
 mod tests {

@@ -5,22 +5,15 @@ mod parser {
         IResult, Parser,
         branch::alt,
         bytes::complete::{tag, take_while1},
-        character::complete::{digit1, space0},
+        character::complete::digit1,
         combinator::map,
         error::{ContextError, ParseError, context},
-        sequence::{delimited, preceded, separated_pair},
+        sequence::{preceded, separated_pair},
     };
 
-    use super::{Connection, ConnectionSource, Identifier, Operation, Value};
+    use crate::y15::ws;
 
-    fn ws<'a, O, E>(
-        parser: impl Parser<&'a str, Output = O, Error = E>,
-    ) -> impl Parser<&'a str, Output = O, Error = E>
-    where
-        E: ParseError<&'a str>,
-    {
-        delimited(space0, parser, space0)
-    }
+    use super::{Connection, ConnectionSource, Identifier, Operation, Value};
 
     fn identifier<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
         input: &'a str,

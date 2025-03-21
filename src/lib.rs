@@ -1,4 +1,4 @@
-#![feature(step_trait)]
+#![feature(step_trait, iterator_try_collect)]
 
 pub mod y15;
 
