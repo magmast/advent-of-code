@@ -18,7 +18,7 @@ mod parser {
     fn identifier<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
         input: &'a str,
     ) -> IResult<&'a str, Identifier<'a>, E> {
-        context("identifier", take_while1(|ch| ('a'..='z').contains(&ch))).parse(input)
+        context("identifier", take_while1(|ch: char| ch.is_ascii_lowercase())).parse(input)
     }
 
     fn u32<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
@@ -245,7 +245,7 @@ async fn state_from_str(input: &str) -> anyhow::Result<State> {
     let state = input
         .lines()
         .map(|line| {
-            parser::connection::<()>(&line)
+            parser::connection::<()>(line)
                 .map(|(_, conn)| conn)
                 .map_err(|err| err.to_owned())
                 .map_err(anyhow::Error::from)

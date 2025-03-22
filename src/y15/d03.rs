@@ -75,7 +75,7 @@ async fn answer(state: State) -> anyhow::Result<()> {
     let state =
         input
             .chars()
-            .map(|ch| Direction::try_from(ch))
+            .map(Direction::try_from)
             .try_fold(state, |mut state, dir| {
                 state.translate(dir?);
                 Ok::<_, anyhow::Error>(state)

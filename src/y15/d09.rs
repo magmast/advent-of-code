@@ -94,7 +94,7 @@ struct Route<'a, 'w> {
     stops: Vec<(u32, &'a str)>,
 }
 
-impl<'a, 'w> Display for Route<'a, 'w> {
+impl Display for Route<'_, '_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.initial)?;
         for (distance, stop) in &self.stops {
@@ -128,8 +128,8 @@ impl<'a, 'w> Route<'a, 'w> {
         let last_stop = self.last_stop();
         let distance = self
             .world
-            .distance(last_stop, &to)
-            .expect(format!("No direct connection between {} and {}", last_stop, to).as_str());
+            .distance(last_stop, to)
+            .unwrap_or_else(|| panic!("No direct connection between {} and {}", last_stop, to));
         self.stops.push((distance, to));
     }
 
@@ -148,7 +148,7 @@ async fn answer(f: impl FnOnce(Vec<Route>) -> Option<u32>) -> Result<()> {
     let world: World = input
         .enumerate()
         .map(|(index, line)| {
-            parser::connection::<VerboseError<_>>(&line)
+            parser::connection::<VerboseError<_>>(line)
                 .finish()
                 .map_err(VerboseError::<String>::from)
                 .context(format!("Failed to parse line {}", index))

@@ -31,7 +31,7 @@ fn is_p1_nice(line: &str) -> bool {
 
     let mut chars = line.chars();
     let prev_char = chars.next();
-    while let Some(curr) = chars.next() {
+    for curr in chars {
         if prev_char == Some(curr) {
             return true;
         }
@@ -79,9 +79,9 @@ mod tests {
 
     #[test]
     fn test_is_p2_nice() {
-        assert_eq!(is_p2_nice("qjhvhtzxzqqjkmpb"), true);
-        assert_eq!(is_p2_nice("xxyxx"), true);
-        assert_eq!(is_p2_nice("uurcxstgmygtbstg"), false);
-        assert_eq!(is_p2_nice("ieodomkazucvgmuy"), false);
+        assert!(is_p2_nice("qjhvhtzxzqqjkmpb"));
+        assert!(is_p2_nice("xxyxx"));
+        assert!(!is_p2_nice("uurcxstgmygtbstg"));
+        assert!(!is_p2_nice("ieodomkazucvgmuy"));
     }
 }

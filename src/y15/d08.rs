@@ -46,7 +46,7 @@ mod parser {
             char('"'),
             fold_many1(
                 alt((escaped_char, none_of("\""))),
-                || String::new(),
+                String::new,
                 |mut acc, ch| {
                     acc.push(ch);
                     acc
@@ -108,7 +108,7 @@ mod parser {
                         doublescaped_char,
                         map(none_of("\""), |ch| format!("{}", ch)),
                     )),
-                    || String::new(),
+                    String::new,
                     |mut acc, s| {
                         acc += &s;
                         acc
