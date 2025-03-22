@@ -1,4 +1,9 @@
-#![feature(step_trait, iterator_try_collect, iter_array_chunks)]
+#![feature(
+    step_trait,
+    iterator_try_collect,
+    iter_array_chunks,
+    iterator_try_reduce
+)]
 
 pub mod y15;
 
