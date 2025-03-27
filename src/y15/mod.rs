@@ -1,6 +1,6 @@
 use std::{
     iter::Step,
-    ops::{Add, Mul},
+    ops::{Add, Mul, Sub},
 };
 
 use nom::{AsChar, Input, Parser, character::complete::space0, sequence::delimited};
@@ -49,8 +49,36 @@ where
     }
 }
 
+impl<Lhs, Rhs> Add<Vec2<Rhs>> for Vec2<Lhs>
+where
+    Lhs: Add<Rhs, Output = Lhs>,
+{
+    type Output = Self;
+
+    fn add(self, rhs: Vec2<Rhs>) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl<Lhs, Rhs> Sub<Vec2<Rhs>> for Vec2<Lhs>
+where
+    Lhs: Sub<Rhs, Output = Lhs>,
+{
+    type Output = Self;
+
+    fn sub(self, rhs: Vec2<Rhs>) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
 /// An inclusive range of points in a 2D grid.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PointRangeInclusive<T>
 where
     T: Step + Copy,
@@ -144,7 +172,7 @@ macro_rules! define_year {
 }
 
 define_year!(
-    d01, d02, d03, d04, d05, d06, d07, d08, d09, d10, d11, d12, d13, d14, d15, d16, d17
+    d01, d02, d03, d04, d05, d06, d07, d08, d09, d10, d11, d12, d13, d14, d15, d16, d17, d18
 );
 
 #[cfg(test)]
