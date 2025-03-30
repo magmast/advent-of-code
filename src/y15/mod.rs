@@ -5,6 +5,58 @@ use std::{
 
 use nom::{AsChar, Input, Parser, character::complete::space0, sequence::delimited};
 
+macro_rules! define_year {
+    ($($day_num:ident),+) => {
+        $( mod $day_num; )*
+
+        #[derive(clap::Subcommand)]
+        enum DaySubcommand {
+            P1,
+            P2,
+        }
+
+        #[derive(clap::Args)]
+        struct DayArgs {
+            #[command(subcommand)]
+            command: DaySubcommand,
+        }
+
+        #[derive(clap::Subcommand)]
+        #[allow(non_camel_case_types)]
+        enum Subcommand {
+            $(
+                $day_num(DayArgs),
+            )*
+        }
+
+        #[derive(clap::Args)]
+        pub struct Args {
+            #[command(subcommand)]
+            command: Subcommand,
+        }
+
+        impl Args {
+            pub async fn run(&self) -> anyhow::Result<()> {
+                match &self.command {
+                    $(
+                        Subcommand::$day_num(args) => {
+                            match args.command {
+                                DaySubcommand::P1 => $day_num::p1().await,
+                                DaySubcommand::P2 => $day_num::p2().await,
+                            }
+                        }
+                    )*
+                }
+            }
+        }
+    };
+}
+
+define_year!(
+    d01, d02, d03, d04, d05, d06, d07, d08, d09, d10, d11, d12, d13, d14, d15, d16, d17, d18, d19,
+    d20
+);
+
 #[derive(Default, Debug, Hash, PartialEq, Eq, PartialOrd, Clone, Copy)]
 pub struct Vec2<T> {
     x: T,
@@ -123,57 +175,6 @@ where
 {
     delimited(space0, parser, space0)
 }
-
-macro_rules! define_year {
-    ($($day_num:ident),+) => {
-        $( mod $day_num; )*
-
-        #[derive(clap::Subcommand)]
-        enum DaySubcommand {
-            P1,
-            P2,
-        }
-
-        #[derive(clap::Args)]
-        struct DayArgs {
-            #[command(subcommand)]
-            command: DaySubcommand,
-        }
-
-        #[derive(clap::Subcommand)]
-        #[allow(non_camel_case_types)]
-        enum Subcommand {
-            $(
-                $day_num(DayArgs),
-            )*
-        }
-
-        #[derive(clap::Args)]
-        pub struct Args {
-            #[command(subcommand)]
-            command: Subcommand,
-        }
-
-        impl Args {
-            pub async fn run(&self) -> anyhow::Result<()> {
-                match &self.command {
-                    $(
-                        Subcommand::$day_num(args) => {
-                            match args.command {
-                                DaySubcommand::P1 => $day_num::p1().await,
-                                DaySubcommand::P2 => $day_num::p2().await,
-                            }
-                        }
-                    )*
-                }
-            }
-        }
-    };
-}
-
-define_year!(
-    d01, d02, d03, d04, d05, d06, d07, d08, d09, d10, d11, d12, d13, d14, d15, d16, d17, d18, d19
-);
 
 #[cfg(test)]
 mod tests {
