@@ -66,9 +66,7 @@ fn increment_password(bytes: impl AsRef<[u8]>) -> String {
         }
         String::from_utf8(bytes).unwrap()
     } else {
-        for byte in &mut bytes {
-            *byte = b'a';
-        }
+        bytes.fill(b'a');
         bytes.insert(0, b'a');
         String::from_utf8(bytes).unwrap()
     }
