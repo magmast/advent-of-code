@@ -1,111 +1,86 @@
 use std::{collections::HashMap, fmt::Display};
 
+use anyhow::{Error, anyhow};
+use winnow::Parser;
+
 mod parser {
-    use nom::{
-        IResult, Parser,
-        branch::alt,
-        bytes::complete::{tag, take_while1},
-        character::complete::digit1,
-        combinator::map,
-        error::{ContextError, ParseError, context},
-        sequence::{preceded, separated_pair},
+    use winnow::{
+        ModalResult, Parser,
+        ascii::dec_uint,
+        combinator::{alt, cut_err, fail, preceded, separated_pair},
+        error::{StrContext, StrContextValue},
+        token::take_while,
     };
 
     use crate::y15::ws;
 
     use super::{Connection, ConnectionSource, Identifier, Operation, Value};
 
-    fn identifier<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        input: &'a str,
-    ) -> IResult<&'a str, Identifier<'a>, E> {
-        context("identifier", take_while1(|ch: char| ch.is_ascii_lowercase())).parse(input)
+    fn identifier<'a>(input: &mut &'a str) -> ModalResult<Identifier<'a>> {
+        take_while(1.., |ch: char| ch.is_ascii_lowercase()).parse_next(input)
     }
 
-    fn u32<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        input: &'a str,
-    ) -> IResult<&'a str, u32, E> {
-        context("u32", map(digit1, |digits: &str| digits.parse().unwrap())).parse(input)
+    fn value<'a>(input: &mut &'a str) -> ModalResult<Value<'a>> {
+        alt((
+            identifier.map(Value::Identifier),
+            dec_uint.map(Value::Literal),
+            fail.context(StrContext::Label("value"))
+                .context(StrContext::Expected(StrContextValue::StringLiteral(
+                    "identifier",
+                )))
+                .context(StrContext::Expected(StrContextValue::StringLiteral(
+                    "unsigned integer",
+                ))),
+        ))
+        .parse_next(input)
     }
 
-    fn value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        input: &'a str,
-    ) -> IResult<&'a str, Value<'a>, E> {
-        alt((map(identifier, Value::Identifier), map(u32, Value::Literal))).parse(input)
+    fn operation<'a>(input: &mut &'a str) -> ModalResult<Operation<'a>> {
+        alt((
+            preceded(ws("NOT"), cut_err(value)).map(Operation::Not),
+            separated_pair(value, ws("AND"), value).map(|(lhs, rhs)| Operation::And(lhs, rhs)),
+            separated_pair(value, ws("OR"), value).map(|(lhs, rhs)| Operation::Or(lhs, rhs)),
+            separated_pair(value, ws("LSHIFT"), dec_uint)
+                .map(|(lhs, rhs)| Operation::LShift(lhs, rhs)),
+            separated_pair(value, ws("RSHIFT"), dec_uint)
+                .map(|(lhs, rhs)| Operation::RShift(lhs, rhs)),
+            fail.context(StrContext::Label("operation"))
+                .context(StrContext::Expected(StrContextValue::StringLiteral("not")))
+                .context(StrContext::Expected(StrContextValue::StringLiteral("or")))
+                .context(StrContext::Expected(StrContextValue::StringLiteral(
+                    "lshift",
+                )))
+                .context(StrContext::Expected(StrContextValue::StringLiteral(
+                    "rshift",
+                ))),
+        ))
+        .parse_next(input)
     }
 
-    fn operation<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        input: &'a str,
-    ) -> IResult<&'a str, Operation<'a>, E> {
-        context(
-            "operation",
-            alt((
-                map(preceded(ws(tag("NOT")), value), Operation::Not),
-                map(
-                    separated_pair(value, ws(tag("AND")), value),
-                    |(lhs, rhs)| Operation::And(lhs, rhs),
-                ),
-                map(separated_pair(value, ws(tag("OR")), value), |(lhs, rhs)| {
-                    Operation::Or(lhs, rhs)
-                }),
-                map(
-                    separated_pair(value, ws(tag("LSHIFT")), u32::<E>),
-                    |(lhs, rhs)| Operation::LShift(lhs, rhs),
-                ),
-                map(
-                    separated_pair(value, ws(tag("RSHIFT")), u32::<E>),
-                    |(lhs, rhs)| Operation::RShift(lhs, rhs),
-                ),
-            )),
-        )
-        .parse(input)
+    fn connection_source<'a>(input: &mut &'a str) -> ModalResult<ConnectionSource<'a>> {
+        alt((
+            operation.map(ConnectionSource::Operation),
+            identifier.map(ConnectionSource::Identifier),
+            dec_uint.map(ConnectionSource::Literal),
+            fail.context(StrContext::Label("connection source"))
+                .context(StrContext::Expected(StrContextValue::StringLiteral(
+                    "operation",
+                )))
+                .context(StrContext::Expected(StrContextValue::StringLiteral(
+                    "identifier",
+                )))
+                .context(StrContext::Expected(StrContextValue::StringLiteral(
+                    "unsigned integer",
+                ))),
+        ))
+        .parse_next(input)
     }
 
-    fn connection_source<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        input: &'a str,
-    ) -> IResult<&'a str, ConnectionSource<'a>, E> {
-        context(
-            "connection_source",
-            alt((
-                map(operation, ConnectionSource::Operation),
-                map(identifier, ConnectionSource::Identifier),
-                map(u32, ConnectionSource::Literal),
-            )),
-        )
-        .parse(input)
-    }
-
-    pub fn connection<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-        input: &'a str,
-    ) -> IResult<&'a str, Connection<'a>, E> {
-        context(
-            "connection",
-            map(
-                separated_pair(connection_source, ws(tag("->")), identifier),
-                |(from, to)| Connection { from, to },
-            ),
-        )
-        .parse(input)
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use nom::{Parser, bytes::complete::tag};
-
-        use super::ws;
-
-        #[test]
-        fn test_ws() {
-            assert_eq!(ws(tag::<_, _, ()>("NOT")).parse("NOT"), Ok(("", "NOT")));
-            assert_eq!(ws(tag::<_, _, ()>("NOT")).parse("  NOT"), Ok(("", "NOT")));
-            assert_eq!(ws(tag::<_, _, ()>("NOT")).parse("NOT  "), Ok(("", "NOT")));
-        }
-
-        #[test]
-        fn test_identifier() {
-            let input = "abc";
-            let result = super::identifier::<()>(input);
-            assert_eq!(result, Ok(("", "abc")));
-        }
+    pub fn connection<'a>(input: &mut &'a str) -> ModalResult<Connection<'a>> {
+        separated_pair(connection_source, ws("->"), identifier)
+            .map(|(from, to)| Connection { from, to })
+            .context(StrContext::Label("connection"))
+            .parse_next(input)
     }
 }
 
@@ -166,6 +141,16 @@ impl<'a> Connection<'a> {
             from: ConnectionSource::Literal(value),
             to,
         }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Connection<'a> {
+    type Error = Error;
+
+    fn try_from(s: &'a str) -> Result<Self, Self::Error> {
+        parser::connection
+            .parse(s)
+            .map_err(|err| anyhow!("\n{err}"))
     }
 }
 
@@ -242,18 +227,14 @@ impl<'a, 'b> Evaluator<'a, 'b> {
 }
 
 async fn state_from_str(input: &str) -> anyhow::Result<State> {
-    let state = input
-        .lines()
-        .map(|line| {
-            parser::connection::<()>(line)
-                .map(|(_, conn)| conn)
-                .map_err(|err| err.to_owned())
-                .map_err(anyhow::Error::from)
-        })
-        .try_fold(State::default(), |mut state, conn| {
-            state.set_connection(conn?);
-            Ok::<_, anyhow::Error>(state)
-        })?;
+    let state =
+        input
+            .lines()
+            .map(Connection::try_from)
+            .try_fold(State::default(), |mut state, conn| {
+                state.set_connection(conn?);
+                Ok::<_, anyhow::Error>(state)
+            })?;
     Ok(state)
 }
 

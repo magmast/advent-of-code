@@ -1,124 +1,82 @@
-use anyhow::Result;
+use anyhow::{Error, Result, anyhow};
+use winnow::Parser;
 
 mod parser {
-    use nom::{
-        AsChar, IResult, Input, Offset, Parser,
-        branch::alt,
-        character::complete::{char, none_of, one_of, satisfy},
-        combinator::{map, recognize},
-        error::ParseError,
-        multi::fold_many1,
-        sequence::{delimited, preceded},
+    use winnow::{
+        Parser, Result,
+        combinator::{alt, delimited, fail, preceded, repeat},
+        error::{StrContext, StrContextValue},
+        token::{any, none_of, one_of},
     };
 
-    fn hexdigit<I, E>(input: I) -> IResult<I, char, E>
-    where
-        I: Input,
-        <I as Input>::Item: AsChar,
-        E: ParseError<I>,
-    {
-        satisfy(|c| c.is_ascii_hexdigit()).parse(input)
+    fn hexdigit(input: &mut &str) -> Result<char> {
+        any.verify(|c: &char| c.is_ascii_hexdigit())
+            .context(StrContext::Label("hexadecimal digit"))
+            .parse_next(input)
     }
 
-    fn escaped_char<I, E>(input: I) -> IResult<I, char, E>
-    where
-        I: Input,
-        <I as Input>::Item: AsChar,
-        E: ParseError<I>,
-    {
+    fn escaped_char(input: &mut &str) -> Result<char> {
         preceded(
-            char('\\'),
+            '\\',
             alt((
-                one_of("\"\\"),
-                preceded(char('x'), map((hexdigit, hexdigit), |_| 't')),
+                one_of(['"', '\\']),
+                preceded('x', (hexdigit, hexdigit).map(|_| 't')),
+                fail.context(StrContext::Label("escaped character"))
+                    .context(StrContext::Expected(StrContextValue::CharLiteral('"')))
+                    .context(StrContext::Expected(StrContextValue::CharLiteral('\\')))
+                    .context(StrContext::Expected(StrContextValue::StringLiteral(
+                        "unicode sequence",
+                    ))),
             )),
         )
-        .parse(input)
+        .parse_next(input)
     }
 
-    pub fn string<I, E>(input: I) -> IResult<I, String, E>
-    where
-        I: Input,
-        <I as Input>::Item: AsChar,
-        E: ParseError<I>,
-    {
+    pub fn string(input: &mut &str) -> Result<String> {
         delimited(
-            char('"'),
-            fold_many1(
-                alt((escaped_char, none_of("\""))),
-                String::new,
-                |mut acc, ch| {
-                    acc.push(ch);
-                    acc
-                },
-            ),
-            char('"'),
+            '"',
+            repeat(1.., alt((escaped_char, none_of(['"'])))).fold(String::new, |mut acc, ch| {
+                acc.push(ch);
+                acc
+            }),
+            '"',
         )
-        .parse(input)
+        .context(StrContext::Label("string"))
+        .parse_next(input)
     }
 
-    pub trait AsStr {
-        fn as_str(&self) -> &str;
+    fn doublescaped_char(input: &mut &str) -> Result<String> {
+        preceded(
+            '\\',
+            alt((
+                one_of(['"', '\\']).map(|ch| format!(r"\{}", ch)),
+                ('x', hexdigit, hexdigit).take().map(|i| i.to_string()),
+                fail.context(StrContext::Label("double escaped character")),
+            )),
+        )
+        .map(|s| format!(r"\\{}", s))
+        .parse_next(input)
     }
 
-    impl AsStr for &str {
-        fn as_str(&self) -> &str {
-            self
-        }
-    }
-
-    impl AsStr for &[u8] {
-        fn as_str(&self) -> &str {
-            std::str::from_utf8(self).unwrap()
-        }
-    }
-
-    fn doublescaped_char<I, E>(input: I) -> IResult<I, String, E>
-    where
-        I: Input + Offset + AsStr,
-        <I as Input>::Item: AsChar,
-        E: ParseError<I>,
-    {
-        map(
-            preceded(
-                char('\\'),
+    pub fn doublescaped(input: &mut &str) -> Result<String> {
+        delimited(
+            '"',
+            repeat(
+                1..,
                 alt((
-                    map(one_of(r#"\""#), |ch| format!(r"\{}", ch)),
-                    map(recognize((char('x'), hexdigit, hexdigit)), |i: I| {
-                        i.as_str().to_string()
-                    }),
+                    doublescaped_char,
+                    none_of(['"']).map(|ch| format!("{}", ch)),
+                    fail.context(StrContext::Label("double escaped string character")),
                 )),
-            ),
-            |s| format!(r"\\{}", s),
+            )
+            .fold(String::new, |mut acc, s| {
+                acc += &s;
+                acc
+            }),
+            '"'.context(StrContext::Label("string termination")),
         )
-        .parse(input)
-    }
-
-    pub fn doublescaped<I, E>(input: I) -> IResult<I, String, E>
-    where
-        I: Input + Offset + AsStr,
-        <I as Input>::Item: AsChar,
-        E: ParseError<I>,
-    {
-        map(
-            delimited(
-                char('"'),
-                fold_many1(
-                    alt((
-                        doublescaped_char,
-                        map(none_of("\""), |ch| format!("{}", ch)),
-                    )),
-                    String::new,
-                    |mut acc, s| {
-                        acc += &s;
-                        acc
-                    },
-                ),
-                char('"'),
-            ),
-            |s| format!(r#""\"{}\"""#, s),
-        )
-        .parse(input)
+        .map(|s| format!(r#""\"{}\"""#, s))
+        .parse_next(input)
     }
 
     #[cfg(test)]
@@ -127,39 +85,41 @@ mod parser {
 
         #[test]
         fn test_doublescaped_char() {
-            let (_, s) = doublescaped_char::<_, ()>(r#"\""#).unwrap();
+            let i = r#"\""#;
+            let s = doublescaped_char(&mut &i[..]).unwrap();
             assert_eq!(s, r#"\\\""#);
 
-            let (_, s) = doublescaped_char::<_, ()>(r#"\\"#).unwrap();
+            let i = r#"\\"#;
+            let s = doublescaped_char(&mut &i[..]).unwrap();
             assert_eq!(s, r"\\\\");
 
-            let (_, s) = doublescaped_char::<_, ()>(r#"\x27"#).unwrap();
+            let i = r#"\x27"#;
+            let s = doublescaped_char(&mut &i[..]).unwrap();
             assert_eq!(s, r"\\x27");
         }
     }
 }
 
-fn escape(s: &str) -> String {
-    let (_, escaped) = parser::string::<_, ()>(s).unwrap();
-    escaped
+fn escape(s: &str) -> Result<String> {
+    parser::string.parse(s).map_err(|err| anyhow!("\n{err}"))
 }
 
-fn doublescape(s: &str) -> String {
-    let (_, doublescaped) = parser::doublescaped::<_, ()>(s).unwrap();
-    doublescaped
+fn doublescape(s: &str) -> Result<String> {
+    parser::doublescaped
+        .parse(s)
+        .map_err(|err| anyhow!("\n{err}"))
 }
 
-async fn answer(mut parser: impl FnMut(&str) -> String) -> Result<()> {
+async fn answer(mut parser: impl FnMut(&str) -> Result<String>) -> Result<()> {
     let input = tokio::fs::read_to_string("inputs/y15_d08.txt").await?;
-    let escaped =
-        input
-            .lines()
-            .map(|line| parser(line.trim()))
-            .fold(String::new(), |mut acc, line| {
-                acc.push_str(&line);
-                acc.push('\n');
-                acc
-            });
+    let escaped = input.lines().map(|line| parser(line.trim())).try_fold(
+        String::new(),
+        |mut acc, line| {
+            acc.push_str(&line?);
+            acc.push('\n');
+            Ok::<_, Error>(acc)
+        },
+    )?;
     println!(
         "Answer: {}",
         input.len().max(escaped.len()) - escaped.len().min(input.len())

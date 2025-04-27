@@ -1,7 +1,8 @@
-use anyhow::{Context, Result};
+use std::str::FromStr;
+
+use anyhow::{Context, Error, Result, anyhow};
 use itertools::Itertools;
-use nom::Finish;
-use nom_language::error::VerboseError;
+use winnow::Parser;
 
 type Molecule = Vec<Atom>;
 
@@ -19,12 +20,19 @@ impl Input {
             .await
             .context("Failed to read input file")?;
 
-        let (_, input) = parser::input::<VerboseError<_>>(&input)
-            .finish()
-            .map_err(VerboseError::<String>::from)
-            .context("Failed to parse input")?;
+        let input = input
+            .parse()
+            .map_err(|err| anyhow!("Failed to parse input: {}", err))?;
 
         Ok(input)
+    }
+}
+
+impl FromStr for Input {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        parser::input.parse(s).map_err(|err| anyhow!("{err}"))
     }
 }
 
@@ -80,69 +88,45 @@ fn count_steps_to_e(molecule: &Molecule) -> usize {
 }
 
 mod parser {
-    use nom::{
-        IResult, Parser,
-        branch::alt,
-        bytes::complete::tag,
-        character::complete::{char, newline, satisfy},
-        combinator::{map, opt, recognize},
-        error::ParseError,
-        multi::{many1, separated_list1},
-        sequence::separated_pair,
+    use winnow::{
+        Parser, Result,
+        ascii::newline,
+        combinator::{alt, opt, repeat, separated, separated_pair},
+        token::any,
     };
 
     use crate::y15::ws;
 
     use super::{Atom, Input};
 
-    fn atom<'a, E>(input: &'a str) -> IResult<&'a str, Atom, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        map(
-            recognize((
-                satisfy(|ch| ch.is_ascii_uppercase()),
-                opt(satisfy(|ch| ch.is_ascii_lowercase())),
-            )),
-            |s: &'a str| s.to_owned(),
+    fn atom(input: &mut &str) -> Result<Atom> {
+        (
+            any.verify(|ch: &char| ch.is_ascii_uppercase()),
+            opt(any.verify(|ch: &char| ch.is_ascii_lowercase())),
         )
-        .parse(input)
+            .take()
+            .map(|s: &str| s.to_owned())
+            .parse_next(input)
     }
 
-    fn replacement<'a, E>(input: &'a str) -> IResult<&'a str, (Atom, Vec<Atom>), E>
-    where
-        E: ParseError<&'a str>,
-    {
+    fn replacement(input: &mut &str) -> Result<(Atom, Vec<Atom>)> {
+        separated_pair(alt((atom, 'e'.map(Into::into))), ws("=>"), molecule).parse_next(input)
+    }
+
+    fn molecule(input: &mut &str) -> Result<Vec<Atom>> {
+        repeat(1.., atom).parse_next(input)
+    }
+
+    pub fn input(input: &mut &str) -> Result<Input> {
         separated_pair(
-            alt((atom, map(char('e'), Into::into))),
-            ws(tag("=>")),
-            many1(atom),
+            separated(1.., replacement, newline),
+            (newline, newline),
+            molecule,
         )
-        .parse(input)
-    }
-
-    fn molecule<'a, E>(input: &'a str) -> IResult<&'a str, Vec<Atom>, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        many1(atom).parse(input)
-    }
-
-    pub fn input<'a, E>(input: &'a str) -> IResult<&'a str, Input, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        map(
-            separated_pair(
-                separated_list1(newline, replacement),
-                (newline, newline),
-                molecule,
-            ),
-            |(replacements, molecule)| Input {
-                replacements,
-                molecule,
-            },
-        )
-        .parse(input)
+        .map(|(replacements, molecule)| Input {
+            replacements,
+            molecule,
+        })
+        .parse_next(input)
     }
 }

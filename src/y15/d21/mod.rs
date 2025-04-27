@@ -1,138 +1,8 @@
-use std::iter;
+use std::{iter, str::FromStr};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Error, Result, anyhow};
 use itertools::Itertools;
-
-mod parser {
-    use winnow::{
-        Parser,
-        ascii::{alpha1, dec_uint, digit1, multispace0, space1},
-        combinator::{alt, delimited, opt, repeat, seq},
-        error::{ContextError, ParseError, ParserError},
-        stream::{AsChar, Stream, StreamIsPartial},
-    };
-
-    use super::{Character, Item, ItemKind};
-
-    /// Creates a new [`Parser`] that accepts and trims any number of
-    /// whitespace characters around the provided `parser` and returns it's
-    /// result.
-    fn ws<I, O, E>(parser: impl Parser<I, O, E>) -> impl Parser<I, O, E>
-    where
-        I: Stream + StreamIsPartial,
-        I::Token: AsChar + Clone,
-        E: ParserError<I>,
-    {
-        delimited(multispace0, parser, multispace0)
-    }
-
-    /// Parses the `input` string containing a enemy's properties and returns a
-    /// new [`Enemy`] instance.
-    ///
-    /// The `input` must be in the same format as in the Advent of Code puzzle.
-    pub fn enemy(input: &str) -> Result<Character, ParseError<&str, ContextError>> {
-        let player = Parser::<_, _, ContextError>::parse(
-            &mut seq!(
-                _: ws("Hit Points:"),
-                ws(dec_uint),
-                _: ws("Damage:"),
-                ws(dec_uint),
-                _: ws("Armor:"),
-                ws(dec_uint)
-            )
-            .map(|(health, damage, armor)| Character {
-                health,
-                damage,
-                armor,
-            }),
-            input,
-        )?;
-
-        Ok(player)
-    }
-
-    /// Creates a new [`ItemKind`] from the `input` string.
-    ///
-    /// The `input` string must contain name of the [`ItemKind`] as in the
-    /// Advent of Code puzzle shop description. So the valid names are:
-    ///
-    /// - Weapons
-    /// - Armor
-    /// - Rings
-    fn item_kind(input: &mut &str) -> winnow::Result<ItemKind> {
-        alt((
-            "Weapons".value(ItemKind::Weapon),
-            "Armor".value(ItemKind::Armor),
-            "Rings".value(ItemKind::Ring),
-        ))
-        .parse_next(input)
-    }
-
-    /// Parses name of a shop item.
-    ///
-    /// Valid names are all ASCII alphabetic characters with an optional "+"
-    /// followed by at least one digit.
-    ///
-    /// A first part of the name and +<digits> may be separated by any number of
-    /// spaces (including 0), but they mustn't be any spaces between + and
-    /// digits.
-    fn item_name<'a>(input: &mut &'a str) -> winnow::Result<&'a str> {
-        seq!(alpha1, _: space1, opt(("+", digit1)))
-            .take()
-            .parse_next(input)
-    }
-
-    /// Same as the [`Item`] struct, but does not have the [`Item::kind`] field.
-    ///
-    /// It's required as a shop description does not contain an item kind with
-    /// each item, but once per section.
-    struct ItemStats {
-        cost: u32,
-        damage: u8,
-        armor: u8,
-    }
-
-    /// Parses a single item from a shop description.
-    fn item(input: &mut &str) -> winnow::Result<ItemStats> {
-        (item_name, ws(dec_uint), ws(dec_uint), ws(dec_uint))
-            .map(|(_name, cost, damage, armor)| ItemStats {
-                cost,
-                damage,
-                armor,
-            })
-            .parse_next(input)
-    }
-
-    /// Parses a single section from a shop description and returns it's items.
-    fn shop_section(input: &mut &str) -> winnow::Result<Vec<Item>> {
-        seq!(
-            ws(item_kind),
-            _: (ws(":"), ws("Cost"), ws("Damage"), ws("Armor")),
-            repeat(1.., item),
-        )
-        .map(|(kind, partials): (_, Vec<_>)| {
-            partials
-                .into_iter()
-                .map(|partial| Item {
-                    kind,
-                    cost: partial.cost,
-                    damage: partial.damage,
-                    armor: partial.armor,
-                })
-                .collect()
-        })
-        .parse_next(input)
-    }
-
-    /// Parses a whole shop description.
-    pub fn shop(input: &str) -> Result<Vec<Item>, ParseError<&str, ContextError>> {
-        let items = repeat(1.., shop_section)
-            .map(|sections: Vec<_>| sections.into_iter().flatten().collect())
-            .parse(input)?;
-
-        Ok(items)
-    }
-}
+use winnow::Parser;
 
 /// Solves the first puzzle from the 21st day of the Advent of Code 2015 event.
 pub async fn p1() -> Result<()> {
@@ -188,7 +58,7 @@ pub async fn p2() -> Result<()> {
 /// Reads the input data for the puzzle.
 async fn read_enemy() -> Result<Character> {
     let input = tokio::fs::read_to_string("inputs/y15_d21.txt").await?;
-    parser::enemy(&input).map_err(|err| anyhow!("{}", err))
+    input.parse().map_err(|err| anyhow!("{}", err))
 }
 
 /// Compares statistics of the `player` and the `enemy` [`Character`]s and returns
@@ -347,8 +217,16 @@ impl Default for Shop {
     /// module's directory.
     fn default() -> Self {
         let input = include_str!("shop.txt");
-        let items = parser::shop(input).unwrap();
-        Self { items }
+        input.parse().unwrap()
+    }
+}
+
+impl FromStr for Shop {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let items = parser::shop.parse(s).map_err(|err| anyhow!("{err}"))?;
+        Ok(Self { items })
     }
 }
 
@@ -358,4 +236,125 @@ struct Character {
     health: u8,
     damage: u8,
     armor: u8,
+}
+
+impl FromStr for Character {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parser::character.parse(s).map_err(|err| anyhow!("{err}"))
+    }
+}
+
+mod parser {
+    use winnow::{
+        Parser, Result,
+        ascii::{alpha1, dec_uint, digit1, newline, space1},
+        combinator::{alt, opt, separated, seq},
+    };
+
+    use crate::y15::ws;
+
+    use super::{Character, Item, ItemKind};
+
+    /// Parses the `input` string containing a enemy's properties and returns a
+    /// new [`Enemy`] instance.
+    ///
+    /// The `input` must be in the same format as in the Advent of Code puzzle.
+    pub fn character(input: &mut &str) -> Result<Character> {
+        seq!(
+            _: ws("Hit Points:"),
+            ws(dec_uint),
+            _: (newline, ws("Damage:")),
+            ws(dec_uint),
+            _: (newline, ws("Armor:")),
+            ws(dec_uint)
+        )
+        .map(|(health, damage, armor)| Character {
+            health,
+            damage,
+            armor,
+        })
+        .parse_next(input)
+    }
+
+    /// Creates a new [`ItemKind`] from the `input` string.
+    ///
+    /// The `input` string must contain name of the [`ItemKind`] as in the
+    /// Advent of Code puzzle shop description. So the valid names are:
+    ///
+    /// - Weapons
+    /// - Armor
+    /// - Rings
+    fn item_kind(input: &mut &str) -> winnow::Result<ItemKind> {
+        alt((
+            "Weapons".value(ItemKind::Weapon),
+            "Armor".value(ItemKind::Armor),
+            "Rings".value(ItemKind::Ring),
+        ))
+        .parse_next(input)
+    }
+
+    /// Parses name of a shop item.
+    ///
+    /// Valid names are all ASCII alphabetic characters with an optional "+"
+    /// followed by at least one digit.
+    ///
+    /// A first part of the name and +<digits> may be separated by any number of
+    /// spaces (including 0), but they mustn't be any spaces between + and
+    /// digits.
+    fn item_name<'a>(input: &mut &'a str) -> winnow::Result<&'a str> {
+        seq!(alpha1, _: space1, opt(("+", digit1)))
+            .take()
+            .parse_next(input)
+    }
+
+    /// Same as the [`Item`] struct, but does not have the [`Item::kind`] field.
+    ///
+    /// It's required as a shop description does not contain an item kind with
+    /// each item, but once per section.
+    struct ItemStats {
+        cost: u32,
+        damage: u8,
+        armor: u8,
+    }
+
+    /// Parses a single item from a shop description.
+    fn item(input: &mut &str) -> winnow::Result<ItemStats> {
+        (item_name, ws(dec_uint), ws(dec_uint), ws(dec_uint))
+            .map(|(_name, cost, damage, armor)| ItemStats {
+                cost,
+                damage,
+                armor,
+            })
+            .parse_next(input)
+    }
+
+    /// Parses a single section from a shop description and returns it's items.
+    fn shop_section(input: &mut &str) -> winnow::Result<Vec<Item>> {
+        seq!(
+            ws(item_kind),
+            _: (ws(":"), ws("Cost"), ws("Damage"), ws("Armor"), newline),
+            separated(1.., item, newline),
+        )
+        .map(|(kind, partials): (_, Vec<_>)| {
+            partials
+                .into_iter()
+                .map(|partial| Item {
+                    kind,
+                    cost: partial.cost,
+                    damage: partial.damage,
+                    armor: partial.armor,
+                })
+                .collect()
+        })
+        .parse_next(input)
+    }
+
+    /// Parses a whole shop description.
+    pub fn shop(input: &mut &str) -> Result<Vec<Item>> {
+        separated(1.., shop_section, (newline, newline))
+            .map(|sections: Vec<_>| sections.into_iter().flatten().collect())
+            .parse_next(input)
+    }
 }

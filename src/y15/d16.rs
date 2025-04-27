@@ -1,59 +1,40 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
-use nom::Finish;
-use nom_language::error::VerboseError;
+use anyhow::{Context, Result, anyhow};
+use winnow::Parser;
 
 mod parser {
-    use nom::{
-        IResult, Parser,
-        bytes::complete::tag,
-        character::complete::{alpha1, char, newline, u32},
-        combinator::map,
-        error::ParseError,
-        multi::separated_list1,
-        sequence::{delimited, separated_pair},
+    use winnow::{
+        Parser, Result,
+        ascii::{alpha1, dec_uint, newline},
+        combinator::{delimited, separated, separated_pair},
     };
 
     use super::Aunt;
     use crate::y15::ws;
 
-    fn property_name<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
-    where
-        E: ParseError<&'a str>,
-    {
+    fn property_name<'a>(input: &mut &'a str) -> Result<&'a str> {
         alpha1(input)
     }
 
-    fn property<'a, E>(input: &'a str) -> IResult<&'a str, (&'a str, u32), E>
-    where
-        E: ParseError<&'a str>,
-    {
-        separated_pair(ws(property_name), ws(char(':')), ws(u32)).parse(input)
+    fn property<'a>(input: &mut &'a str) -> Result<(&'a str, u32)> {
+        separated_pair(ws(property_name), ws(':'), ws(dec_uint)).parse_next(input)
     }
 
-    fn aunt<'a, E>(input: &'a str) -> IResult<&'a str, Aunt<'a>, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        map(
-            (
-                delimited(ws(tag("Sue")), u32, ws(char(':'))),
-                separated_list1(ws(char(',')), property),
-            ),
-            |(num, properties)| Aunt {
+    fn aunt<'a>(input: &mut &'a str) -> Result<Aunt<'a>> {
+        (
+            delimited(ws("Sue"), dec_uint, ws(':')),
+            separated(1.., property, ws(',')),
+        )
+            .map(|(num, properties): (_, Vec<_>)| Aunt {
                 num,
                 properties: properties.into_iter().collect(),
-            },
-        )
-        .parse(input)
+            })
+            .parse_next(input)
     }
 
-    pub fn aunts<'a, E>(input: &'a str) -> IResult<&'a str, Vec<Aunt<'a>>, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        separated_list1(newline, aunt).parse(input)
+    pub fn aunts<'a>(input: &mut &'a str) -> Result<Vec<Aunt<'a>>> {
+        separated(1.., aunt, newline).parse_next(input)
     }
 }
 
@@ -85,10 +66,9 @@ where
     F: Fn(&Aunt) -> usize,
 {
     let input = tokio::fs::read_to_string("inputs/y15_d16.txt").await?;
-    let aunts = parser::aunts::<VerboseError<_>>(&input)
-        .finish()
-        .map(|(_, aunts)| aunts)
-        .map_err(VerboseError::<String>::from)?;
+    let aunts = parser::aunts
+        .parse(input.as_str())
+        .map_err(|err| anyhow!("{err}"))?;
     let best_aunt = aunts
         .into_iter()
         .max_by(|a, b| score_fn(a).cmp(&score_fn(b)))

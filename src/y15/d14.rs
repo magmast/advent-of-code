@@ -1,79 +1,53 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use itertools::Itertools;
-use nom::Finish;
-use nom_language::error::VerboseError;
+use winnow::Parser;
 
 const RUN_DURATION: Seconds = 2503;
 
 mod parser {
-    use nom::{
-        AsChar, Compare, IResult, Input, Parser,
-        bytes::complete::tag,
-        character::complete::{alpha1, char, newline, u64},
-        combinator::map,
-        error::ParseError,
-        multi::separated_list1,
-        sequence::delimited,
+    use winnow::{
+        Parser, Result,
+        ascii::{alpha1, dec_uint, newline},
+        combinator::{delimited, separated},
     };
 
     use crate::y15::ws;
 
     use super::Reindeer;
 
-    fn name<I, E>(input: I) -> IResult<I, I, E>
-    where
-        I: Input,
-        I::Item: AsChar,
-        E: ParseError<I>,
-    {
+    fn name<'a>(input: &mut &'a str) -> Result<&'a str> {
         alpha1(input)
     }
 
-    fn reindeer<I, E>(input: I) -> IResult<I, Reindeer, E>
-    where
-        I: Input + for<'a> Compare<&'a str>,
-        I::Item: AsChar,
-        E: ParseError<I>,
-    {
-        map(
-            (
-                delimited(
-                    (ws(name), ws(tag("can")), ws(tag("fly"))),
-                    ws(u64),
-                    ws(tag("km/s")),
+    fn reindeer(input: &mut &str) -> Result<Reindeer> {
+        (
+            delimited((ws(name), ws("can"), ws("fly")), ws(dec_uint), ws("km/s")),
+            delimited(ws("for"), ws(dec_uint), ws("seconds")),
+            delimited(
+                (
+                    ws(','),
+                    ws("but"),
+                    ws("then"),
+                    ws("must"),
+                    ws("rest"),
+                    ws("for"),
                 ),
-                delimited(ws(tag("for")), ws(u64), ws(tag("seconds"))),
-                delimited(
-                    (
-                        ws(char(',')),
-                        ws(tag("but")),
-                        ws(tag("then")),
-                        ws(tag("must")),
-                        ws(tag("rest")),
-                        ws(tag("for")),
-                    ),
-                    ws(u64),
-                    (ws(tag("seconds")), ws(char('.'))),
-                ),
+                ws(dec_uint),
+                (ws("seconds"), ws('.')),
             ),
-            |(speed, move_dur, rest_dur)| Reindeer {
+        )
+            .map(|(speed, move_dur, rest_dur)| Reindeer {
                 speed,
                 r#move: move_dur,
                 rest: rest_dur,
-            },
-        )
-        .parse(input)
+            })
+            .parse_next(input)
     }
 
-    pub fn reindeers<I, E>(input: I) -> IResult<I, Vec<Reindeer>, E>
-    where
-        I: Input + for<'a> Compare<&'a str>,
-        I::Item: AsChar,
-        E: ParseError<I>,
-    {
-        separated_list1(newline, reindeer).parse(input)
+    pub fn reindeers(input: &mut &str) -> Result<Vec<Reindeer>> {
+        separated(1.., reindeer, newline).parse_next(input)
     }
 }
 
@@ -99,10 +73,9 @@ impl Reindeer {
 
 async fn read_reindeers() -> Result<Vec<Reindeer>> {
     let input = tokio::fs::read_to_string("inputs/y15_d14.txt").await?;
-    parser::reindeers::<_, VerboseError<_>>(input.as_str())
-        .finish()
-        .map(|(_, v)| v)
-        .map_err(VerboseError::<String>::from)
+    parser::reindeers
+        .parse(input.as_str())
+        .map_err(|err| anyhow!("{err}"))
         .context("Failed to parse reindeers")
 }
 

@@ -27,7 +27,6 @@ dependencies = [
  "futures",
  "itertools",
  "md5",
- "nom",
  "nom-language",
  "rayon",
  "serde",

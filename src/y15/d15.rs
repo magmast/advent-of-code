@@ -1,78 +1,63 @@
 use std::{collections::HashMap, ops::Mul};
 
-use anyhow::{Context, Result};
-use nom::Finish;
-use nom_language::error::VerboseError;
+use anyhow::{Context, Result, anyhow};
+use winnow::Parser;
 
 mod parser {
-    use nom::{
-        AsChar, Compare, IResult, Input, Offset, Parser,
-        bytes::complete::{tag, take_while1},
-        character::complete::{char, i32, newline, satisfy},
-        combinator::{map, recognize},
-        error::ParseError,
-        multi::separated_list1,
-        sequence::preceded,
+    use winnow::{
+        Parser, Result,
+        ascii::{dec_int, newline},
+        combinator::{preceded, separated},
+        error::ParserError,
+        stream::{AsBStr, AsChar, Compare, Stream, StreamIsPartial},
+        token::{any, take_while},
     };
 
     use crate::y15::ws;
 
     use super::Ingredient;
 
-    fn name<I, E>(input: I) -> IResult<I, I, E>
-    where
-        I: Input + Offset,
-        I::Item: AsChar,
-        E: ParseError<I>,
-    {
-        recognize((
-            satisfy(|i| i.as_char().is_ascii_uppercase()),
-            take_while1(|i: I::Item| i.as_char().is_ascii_alphabetic()),
-        ))
-        .parse(input)
-    }
-
-    fn property<I, E>(name: &'static str) -> impl Parser<I, Output = i32, Error = E>
-    where
-        I: Input + for<'a> Compare<&'a str> + for<'a> Compare<&'a [u8]>,
-        I::Item: AsChar,
-        E: ParseError<I>,
-    {
-        preceded(ws(tag(name)), ws(i32))
-    }
-
-    fn ingredient<I, E>(input: I) -> IResult<I, Ingredient, E>
-    where
-        I: Input + Offset + for<'a> Compare<&'a str> + for<'a> Compare<&'a [u8]>,
-        I::Item: AsChar,
-        E: ParseError<I>,
-    {
-        map(
-            (
-                preceded((ws(name), ws(char(':'))), property("capacity")),
-                preceded(ws(char(',')), property("durability")),
-                preceded(ws(char(',')), property("flavor")),
-                preceded(ws(char(',')), property("texture")),
-                preceded(ws(char(',')), property("calories")),
-            ),
-            |(capacity, durability, flavor, texture, calories)| Ingredient {
-                capacity,
-                durability,
-                flavor,
-                texture,
-                calories,
-            },
+    fn name<'a>(input: &mut &'a str) -> Result<&'a str> {
+        (
+            any.verify(|i: &char| i.is_ascii_uppercase()),
+            take_while(1.., |i: char| i.as_char().is_ascii_alphabetic()),
         )
-        .parse(input)
+            .take()
+            .parse_next(input)
     }
 
-    pub fn ingredients<I, E>(input: I) -> IResult<I, Vec<Ingredient>, E>
+    fn property<I, E>(name: &'static str) -> impl Parser<I, i32, E>
     where
-        I: Input + Offset + for<'a> Compare<&'a str> + for<'a> Compare<&'a [u8]>,
-        I::Item: AsChar,
-        E: ParseError<I>,
+        I: Stream + StreamIsPartial + Compare<&'static str>,
+        I::Token: AsChar + Clone,
+        I::Slice: AsBStr,
+        E: ParserError<I>,
     {
-        separated_list1(newline, ingredient).parse(input)
+        preceded(ws(name), ws(dec_int))
+    }
+
+    fn ingredient(input: &mut &str) -> Result<Ingredient> {
+        (
+            preceded((ws(name), ws(':')), property("capacity")),
+            preceded(ws(','), property("durability")),
+            preceded(ws(','), property("flavor")),
+            preceded(ws(','), property("texture")),
+            preceded(ws(','), property("calories")),
+        )
+            .map(
+                |(capacity, durability, flavor, texture, calories)| Ingredient {
+                    capacity,
+                    durability,
+                    flavor,
+                    texture,
+                    calories,
+                },
+            )
+            .parse_next(input)
+    }
+
+    pub fn ingredients(input: &mut &str) -> Result<Vec<Ingredient>> {
+        separated(1.., ingredient, newline).parse_next(input)
     }
 }
 
@@ -101,10 +86,9 @@ impl Mul<u32> for &Ingredient {
 
 async fn read_ingredients() -> Result<Vec<Ingredient>> {
     let input = tokio::fs::read_to_string("inputs/y15_d15.txt").await?;
-    let ingredients = parser::ingredients::<_, VerboseError<_>>(input.as_str())
-        .finish()
-        .map(|(_, ingredients)| ingredients)
-        .map_err(VerboseError::<String>::from)?;
+    let ingredients = parser::ingredients
+        .parse(input.as_str())
+        .map_err(|err| anyhow!("{err}"))?;
     Ok(ingredients)
 }
 

@@ -3,7 +3,13 @@ use std::{
     ops::{Add, Mul, Sub},
 };
 
-use nom::{AsChar, Input, Parser, character::complete::space0, sequence::delimited};
+use winnow::{
+    Parser,
+    ascii::space0,
+    combinator::delimited,
+    error::ParserError,
+    stream::{AsChar, Stream, StreamIsPartial},
+};
 
 macro_rules! define_year {
     ($($day_num:ident),+) => {
@@ -167,11 +173,14 @@ where
     }
 }
 
-pub fn ws<I, P>(parser: P) -> impl Parser<I, Output = P::Output, Error = P::Error>
+/// Creates a new [`Parser`] that accepts and trims any number of
+/// whitespace characters around the provided `parser` and returns it's
+/// result.
+fn ws<I, O, E>(parser: impl Parser<I, O, E>) -> impl Parser<I, O, E>
 where
-    I: Input,
-    I::Item: AsChar,
-    P: Parser<I>,
+    I: Stream + StreamIsPartial,
+    I::Token: AsChar + Clone,
+    E: ParserError<I>,
 {
     delimited(space0, parser, space0)
 }

@@ -3,42 +3,24 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use anyhow::{Context, Result};
-use nom::Finish;
-use nom_language::error::VerboseError;
+use anyhow::{Context, Error, Result, anyhow};
+use winnow::Parser;
 
 mod parser {
-    use nom::{
-        AsChar, IResult, Input, Parser,
-        bytes::complete::{tag, take_while1},
-        character::complete::u32,
-        combinator::map,
-        error::ParseError,
-        sequence::separated_pair,
-    };
+    use winnow::{Parser, Result, ascii::dec_uint, combinator::separated_pair, token::take_while};
 
     use crate::y15::ws;
 
     use super::Connection;
 
-    fn city<I, E>(input: I) -> IResult<I, I, E>
-    where
-        I: Input,
-        <I as Input>::Item: AsChar,
-        E: ParseError<I>,
-    {
-        take_while1(|i: I::Item| i.as_char().is_ascii_alphabetic()).parse(input)
+    fn city<'a>(input: &mut &'a str) -> Result<&'a str> {
+        take_while(1.., |i: char| i.is_ascii_alphabetic()).parse_next(input)
     }
 
-    pub fn connection<'a, E>(input: &'a str) -> IResult<&'a str, Connection<'a>, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        map(
-            separated_pair(separated_pair(city, ws(tag("to")), city), ws(tag("=")), u32),
-            |((from, to), distance)| Connection::new(from, to, distance),
-        )
-        .parse(input)
+    pub fn connection<'a>(input: &mut &'a str) -> Result<Connection<'a>> {
+        separated_pair(separated_pair(city, ws("to"), city), ws("="), dec_uint)
+            .map(|((from, to), distance)| Connection::new(from, to, distance))
+            .parse_next(input)
     }
 }
 
@@ -52,6 +34,16 @@ struct Connection<'a> {
 impl<'a> Connection<'a> {
     fn new(from: &'a str, to: &'a str, distance: u32) -> Self {
         Self { from, to, distance }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Connection<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        parser::connection
+            .parse(value)
+            .map_err(|err| anyhow!("\n{err}"))
     }
 }
 
@@ -148,11 +140,7 @@ async fn answer(f: impl FnOnce(Vec<Route>) -> Option<u32>) -> Result<()> {
     let world: World = input
         .enumerate()
         .map(|(index, line)| {
-            parser::connection::<VerboseError<_>>(line)
-                .finish()
-                .map_err(VerboseError::<String>::from)
-                .context(format!("Failed to parse line {}", index))
-                .map(|(_, conn)| conn)
+            Connection::try_from(line).with_context(|| format!("Failed to parse line {index}"))
         })
         .try_collect()?;
 

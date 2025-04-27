@@ -1,81 +1,59 @@
 use std::ops::{Deref, DerefMut};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use itertools::Itertools;
-use nom::Finish;
-use nom_language::error::VerboseError;
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use winnow::Parser;
 
 mod parser {
-    use nom::{
-        IResult, Parser,
-        branch::alt,
-        bytes::complete::{tag, take_while1},
-        character::complete::{char, newline, satisfy, u32},
-        combinator::{map, recognize},
-        error::ParseError,
-        multi::separated_list1,
-        sequence::{preceded, terminated},
+    use winnow::{
+        Parser, Result,
+        ascii::{dec_uint, newline},
+        combinator::{alt, preceded, separated, seq, terminated},
+        token::{any, take_while},
     };
 
     use crate::y15::ws;
 
     use super::{Relation, Relations};
 
-    fn name<'a, E>(input: &'a str) -> IResult<&'a str, &'a str, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        recognize((
-            satisfy(|c| c.is_ascii_uppercase()),
-            take_while1(|c: char| c.is_ascii_lowercase()),
-        ))
-        .parse(input)
+    fn name<'a>(input: &mut &'a str) -> Result<&'a str> {
+        (
+            any.verify(|c: &char| c.is_ascii_uppercase()),
+            take_while(1.., |c: char| c.is_ascii_lowercase()),
+        )
+            .take()
+            .parse_next(input)
     }
 
-    fn happiness<'a, E>(input: &'a str) -> IResult<&'a str, i32, E>
-    where
-        E: ParseError<&'a str>,
-    {
+    fn happiness(input: &mut &str) -> Result<i32> {
         terminated(
             alt((
-                map(preceded(ws(tag("gain")), ws(u32)), |n| n as i32),
-                map(preceded(ws(tag("lose")), ws(u32)), |n| -(n as i32)),
+                preceded(ws("gain"), ws(dec_uint)).map(|n: u16| n.into()),
+                preceded(ws("lose"), ws(dec_uint)).map(|n: u16| -(i32::from(n))),
             )),
-            (ws(tag("happiness")), ws(tag("units"))),
+            (ws("happiness"), ws("units")),
         )
-        .parse(input)
+        .parse_next(input)
     }
 
-    fn relation<'a, E>(input: &'a str) -> IResult<&'a str, Relation<'a>, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        map(
-            (
-                ws(name),
-                ws(tag("would")),
-                happiness,
-                ws(tag("by")),
-                ws(tag("sitting")),
-                ws(tag("next")),
-                ws(tag("to")),
-                ws(name),
-                ws(char('.')),
-            ),
-            |(a, _, happiness, _, _, _, _, b, _)| Relation(a, happiness, b),
+    fn relation<'a>(input: &mut &'a str) -> Result<Relation<'a>> {
+        seq!(
+            ws(name),
+            _: ws("would"),
+            happiness,
+            _: (ws("by"), ws("sitting"), ws("next"), ws("to")),
+            ws(name),
+            _: ws('.'),
         )
-        .parse(input)
+        .map(|(a, happiness, b)| Relation(a, happiness, b))
+        .parse_next(input)
     }
 
-    pub fn relations<'a, E>(input: &'a str) -> IResult<&'a str, Relations<'a>, E>
-    where
-        E: ParseError<&'a str>,
-    {
-        map(separated_list1(newline, relation), |relations| {
-            Relations(relations)
-        })
-        .parse(input)
+    pub fn relations<'a>(input: &mut &'a str) -> Result<Relations<'a>> {
+        separated(1.., relation, newline)
+            .map(Relations)
+            .parse_next(input)
     }
 }
 
@@ -125,6 +103,16 @@ impl DerefMut for Relations<'_> {
     }
 }
 
+impl<'a> TryFrom<&'a str> for Relations<'a> {
+    type Error = Error;
+
+    fn try_from(value: &'a str) -> std::result::Result<Self, Self::Error> {
+        parser::relations
+            .parse(value)
+            .map_err(|err| anyhow!("{err}"))
+    }
+}
+
 struct Arrangement<'r, 'a> {
     relations: &'r Relations<'a>,
     order: Vec<&'a str>,
@@ -143,14 +131,6 @@ impl Arrangement<'_, '_> {
             .score(self.order.last()?, self.order.first()?);
         Some(base_score + wrap_score?)
     }
-}
-
-async fn read_relations(input: &str) -> Result<Relations> {
-    parser::relations::<VerboseError<_>>(input)
-        .finish()
-        .map(|(_, v)| v)
-        .map_err(VerboseError::<String>::from)
-        .map_err(anyhow::Error::from)
 }
 
 fn answer(relations: Relations) -> Result<()> {
@@ -176,13 +156,13 @@ fn answer(relations: Relations) -> Result<()> {
 
 pub async fn p1() -> Result<()> {
     let input = tokio::fs::read_to_string("inputs/y15_d13.txt").await?;
-    let relations = read_relations(&input).await?;
+    let relations = Relations::try_from(input.as_str())?;
     answer(relations)
 }
 
 pub async fn p2() -> Result<()> {
     let input = tokio::fs::read_to_string("inputs/y15_d13.txt").await?;
-    let mut relations = read_relations(&input).await?;
+    let mut relations = Relations::try_from(input.as_str())?;
     let my_relations = relations
         .people()
         .into_iter()

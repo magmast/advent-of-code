@@ -1,67 +1,19 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
+    str::FromStr,
 };
 
-use anyhow::anyhow;
+use anyhow::{Error, anyhow};
 use futures::{TryStreamExt, future};
-use nom::Parser;
 use tokio::{
     fs::File,
     io::{AsyncBufReadExt, BufReader},
 };
 use tokio_stream::wrappers::LinesStream;
+use winnow::Parser;
 
 use super::{PointRangeInclusive, Vec2};
-
-mod parser {
-    use nom::{
-        Parser,
-        branch::alt,
-        bytes::complete::tag,
-        character::complete::{digit1, space1},
-        combinator::{map, value},
-        error::Error,
-        sequence::separated_pair,
-    };
-
-    use crate::y15::{PointRangeInclusive, Vec2};
-
-    use super::{Action, Instruction};
-
-    fn action<'a>() -> impl Parser<&'a [u8], Output = Action, Error = Error<&'a [u8]>> {
-        alt((
-            value(Action::TurnOn, tag("turn on")),
-            value(Action::TurnOff, tag("turn off")),
-            value(Action::Toggle, tag("toggle")),
-        ))
-    }
-
-    fn range<'a>()
-    -> impl Parser<&'a [u8], Output = PointRangeInclusive<usize>, Error = Error<&'a [u8]>> {
-        fn coord<'a>() -> impl Parser<&'a [u8], Output = Vec2<usize>, Error = Error<&'a [u8]>> {
-            map(separated_pair(digit1, tag(","), digit1), |(a, b)| {
-                Vec2::new(
-                    std::str::from_utf8(a).unwrap().parse().unwrap(),
-                    std::str::from_utf8(b).unwrap().parse().unwrap(),
-                )
-            })
-        }
-
-        map(
-            separated_pair(coord(), (space1, tag("through"), space1), coord()),
-            |(begin, end)| begin.points_to_inclusive(end),
-        )
-    }
-
-    pub fn instruction<'a>() -> impl Parser<&'a [u8], Output = Instruction, Error = Error<&'a [u8]>>
-    {
-        map(
-            separated_pair(action(), space1, range()),
-            |(action, range)| Instruction { action, range },
-        )
-    }
-}
 
 #[derive(Debug, Clone)]
 enum Action {
@@ -76,6 +28,14 @@ struct Instruction {
     range: PointRangeInclusive<usize>,
 }
 
+impl FromStr for Instruction {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        parser::instruction.parse(s).map_err(|err| anyhow!("{err}"))
+    }
+}
+
 trait Grid {
     fn exec(&mut self, instruction: &Instruction);
     fn result(&self) -> impl Display;
@@ -86,12 +46,7 @@ async fn answer<G: Grid + Default>() -> anyhow::Result<()> {
     let input = BufReader::new(input);
     let grid = LinesStream::new(input.lines())
         .map_err(anyhow::Error::from)
-        .and_then(async |line| {
-            let (_, instruction) = parser::instruction()
-                .parse(line.as_ref())
-                .map_err(|_| anyhow!("Line parsing failed"))?;
-            Ok(instruction)
-        })
+        .and_then(|line| future::ready(line.parse()))
         .try_fold(G::default(), |mut grid, instruction: Instruction| {
             grid.exec(&instruction);
             future::ok(grid)
@@ -166,4 +121,43 @@ impl Grid for BrightnessGrid {
 
 pub async fn p2() -> anyhow::Result<()> {
     answer::<BrightnessGrid>().await
+}
+
+mod parser {
+    use winnow::{
+        Parser, Result,
+        ascii::{digit1, multispace1},
+        combinator::{alt, separated_pair},
+    };
+
+    use crate::y15::{PointRangeInclusive, Vec2, ws};
+
+    use super::{Action, Instruction};
+
+    fn action(input: &mut &str) -> Result<Action> {
+        alt((
+            "turn on".value(Action::TurnOn),
+            "turn off".value(Action::TurnOff),
+            "toggle".value(Action::Toggle),
+        ))
+        .parse_next(input)
+    }
+
+    fn range(input: &mut &str) -> Result<PointRangeInclusive<usize>> {
+        fn coord(input: &mut &str) -> Result<Vec2<usize>> {
+            separated_pair(digit1, ",", digit1)
+                .map(|(a, b): (&str, &str)| Vec2::new(a.parse().unwrap(), b.parse().unwrap()))
+                .parse_next(input)
+        }
+
+        separated_pair(coord, ws("through"), coord)
+            .map(|(begin, end)| begin.points_to_inclusive(end))
+            .parse_next(input)
+    }
+
+    pub fn instruction(input: &mut &str) -> Result<Instruction> {
+        separated_pair(action, multispace1, range)
+            .map(|(action, range)| Instruction { action, range })
+            .parse_next(input)
+    }
 }
